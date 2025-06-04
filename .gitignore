@@ -2,3 +2,24 @@
 /agent_storage/*
 *.pkl
 /.idea
+
+.venv/
+/venv
+
+results/
+logs/
+
+# Python bytecode - making extra sure to ignore all pycache
+**/__pycache__/
+**/*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
