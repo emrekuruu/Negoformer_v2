@@ -97,12 +97,9 @@ class Tournament:
             np.random.seed(self.seed)
             os.environ['PYTHONHASHSEED'] = str(self.seed)
 
-        # Create directory
-        if os.path.exists(self.result_dir):
-            shutil.rmtree(self.result_dir)
 
-        os.makedirs(self.result_dir)
-        os.makedirs(os.path.join(os.path.join(self.result_dir, "sessions/")))
+        os.makedirs(self.result_dir, exist_ok=True)
+        os.makedirs(os.path.join(os.path.join(self.result_dir, "sessions/")), exist_ok=True)
 
         # Set killed flag
         self.killed = False
@@ -135,6 +132,10 @@ class Tournament:
 
             session_path = "%s_%s_Domain%s.xlsx" % \
                            (session_runner.agentA.name, session_runner.agentB.name, domain_name)
+
+            if os.path.exists(os.path.join(self.result_dir, "sessions/", session_path)):
+                print(f"Session {session_path} already exists. Skipping...")
+                continue
 
             session_start_time = time.time()
             tournament_logs.append(session_runner.run(os.path.join(self.result_dir, "sessions/", session_path)))
