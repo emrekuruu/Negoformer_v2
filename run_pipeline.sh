@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+echo "Step 1: Creating file index..."
+python download_from_s3.py
+
 echo "Step 2: Running data collection..."
 python -u run.py tournament_configurations/data_collection.yaml | tee -a /app/bootstrap.log
 

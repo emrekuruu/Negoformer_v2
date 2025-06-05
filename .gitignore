@@ -24,3 +24,4 @@ logs/
 ehthumbs.db
 Thumbs.db
 .env
+indexed_files.csv

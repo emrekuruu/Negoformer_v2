@@ -34,7 +34,7 @@ if __name__ == "__main__":
     configuration["agent_classes"] = set([load_agent_class(path) for path in configuration["agents"]])
     configuration["logger_classes"] = set([load_logger_class(path) for path in configuration["loggers"]])
     configuration["estimator_classes"] = set([load_estimator_class(path) for path in configuration["estimators"]])
-    configuration["domains"] = [os.getenv("DOMAIN_NAME")]
+    configuration["domains"] = [os.getenv("DOMAIN_NAME")] if os.getenv("DOMAIN_NAME") else configuration["domains"]
 
     del configuration["agents"]
     del configuration["loggers"]

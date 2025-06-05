@@ -1,27 +1,28 @@
 #!/usr/bin/env python3
 """
-S3 Folder Download Script
-Downloads files from S3 bucket to local folder without overriding existing files.
-Only downloads new files that don't already exist in the target local location.
+S3 File Indexer Script
+Creates a CSV index of files in S3 bucket without downloading the actual content.
+Generates a CSV file with file information including name, size, and last modified date.
 """
 
 import os
 import boto3
-import argparse
+import csv
 from pathlib import Path
+from datetime import datetime
 from botocore.exceptions import ClientError, NoCredentialsError
-from typing import Set, List
+from typing import List, Dict
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Configuration - modify these values as needed
-LOCAL_FOLDER_PATH = "./results"  # Change this to your desired local folder path
+CSV_OUTPUT_PATH = "./indexed_files.csv"  # Path for the output CSV file
 BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')  # Set in .env file
 S3_FOLDER_PATH = "results"  # Change this to your desired S3 folder path (empty string for root)
 
-class S3FolderDownloader:
+class S3FileIndexer:
     def __init__(self, bucket_name: str, region_name: str = None):
         """
         Initialize S3 client using environment variables
@@ -49,17 +50,17 @@ class S3FolderDownloader:
             # Use default credentials (IAM role, etc.)
             self.s3_client = boto3.client('s3', region_name=region)
     
-    def get_s3_files(self, s3_folder_path: str) -> List[str]:
+    def get_s3_file_details(self, s3_folder_path: str) -> List[Dict]:
         """
-        Get list of all files in the S3 folder
+        Get detailed information about all files in the S3 folder
         
         Args:
             s3_folder_path: Path to the folder in S3 bucket
             
         Returns:
-            List of S3 file keys
+            List of dictionaries containing file details
         """
-        s3_files = []
+        file_details = []
         
         try:
             # Ensure folder path ends with '/' for proper prefix matching
@@ -73,7 +74,17 @@ class S3FolderDownloader:
                     for obj in page['Contents']:
                         # Skip folders (keys ending with '/')
                         if not obj['Key'].endswith('/'):
-                            s3_files.append(obj['Key'])
+                            # Calculate relative path from the S3 folder
+                            relative_path = obj['Key']
+                            if s3_folder_path:
+                                s3_prefix = s3_folder_path.rstrip('/') + '/'
+                                if obj['Key'].startswith(s3_prefix):
+                                    relative_path = obj['Key'][len(s3_prefix):]
+                            
+                            file_info = {
+                                'relative_path': os.path.basename(obj['Key'])
+                            }
+                            file_details.append(file_info)
                         
         except ClientError as e:
             if e.response['Error']['Code'] == 'NoSuchBucket':
@@ -83,152 +94,96 @@ class S3FolderDownloader:
                 print(f"Error listing S3 objects: {e}")
                 raise
                 
-        return s3_files
+        return file_details
     
-    def get_existing_local_files(self, local_folder_path: str) -> Set[str]:
+    def write_csv_index(self, file_details: List[Dict], csv_output_path: str) -> bool:
         """
-        Get list of existing files in the local folder recursively
+        Write file details to a CSV file
         
         Args:
-            local_folder_path: Path to the local folder
+            file_details: List of file detail dictionaries
+            csv_output_path: Path to save the CSV file
             
         Returns:
-            Set of relative file paths from the local folder
-        """
-        existing_files = set()
-        local_path = Path(local_folder_path)
-        
-        if local_path.exists() and local_path.is_dir():
-            for file_path in local_path.rglob('*'):
-                if file_path.is_file():
-                    # Get relative path from the local folder
-                    relative_path = file_path.relative_to(local_path)
-                    # Convert to Unix-style path for consistency
-                    existing_files.add(str(relative_path).replace('\\', '/'))
-        
-        return existing_files
-    
-    def download_file(self, s3_key: str, local_file_path: str) -> bool:
-        """
-        Download a single file from S3
-        
-        Args:
-            s3_key: S3 key (path) for the file
-            local_file_path: Path to save the local file
-            
-        Returns:
-            True if download successful, False otherwise
+            True if CSV creation successful, False otherwise
         """
         try:
             # Create directory if it doesn't exist
-            local_dir = os.path.dirname(local_file_path)
-            if local_dir:
-                os.makedirs(local_dir, exist_ok=True)
+            csv_dir = os.path.dirname(csv_output_path)
+            if csv_dir:
+                os.makedirs(csv_dir, exist_ok=True)
             
-            self.s3_client.download_file(self.bucket_name, s3_key, local_file_path)
+            # Define CSV headers
+            headers = [
+                'relative_path'
+            ]
+            
+            with open(csv_output_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=headers)
+                writer.writeheader()
+                writer.writerows(file_details)
+            
             return True
-        except ClientError as e:
-            print(f"Error downloading {s3_key}: {e}")
+        except Exception as e:
+            print(f"Error writing CSV file: {e}")
             return False
     
-    def download_folder(self, s3_folder_path: str = '', local_folder_path: str = './downloads',
-                       dry_run: bool = False) -> dict:
+    def create_file_index(self, s3_folder_path: str = '', csv_output_path: str = './indexed_files.csv') -> dict:
         """
-        Download S3 folder to local directory without overriding existing files
+        Create a CSV index of files in S3 folder without downloading them
         
         Args:
             s3_folder_path: Source folder path in S3 bucket (empty string for root)
-            local_folder_path: Path to the local folder to download to
-            dry_run: If True, only show what would be downloaded without actually downloading
+            csv_output_path: Path to save the CSV index file
             
         Returns:
-            Dictionary with download statistics
+            Dictionary with indexing statistics
         """
-        print(f"Starting download from s3://{self.bucket_name}/{s3_folder_path} to '{local_folder_path}'")
+        print(f"Creating file index from s3://{self.bucket_name}/{s3_folder_path}")
         
-        # Get files in S3
+        # Get file details from S3
         print("Scanning S3 files...")
-        s3_files = self.get_s3_files(s3_folder_path)
-        print(f"Found {len(s3_files)} files in S3")
+        file_details = self.get_s3_file_details(s3_folder_path)
+        print(f"Found {len(file_details)} files in S3")
         
-        # Get existing local files
-        print("Checking existing local files...")
-        existing_local_files = self.get_existing_local_files(local_folder_path)
-        print(f"Found {len(existing_local_files)} existing files in local folder")
+        if not file_details:
+            print("No files found to index.")
+            return {
+                'total_files': 0,
+                'csv_created': False,
+                'csv_path': csv_output_path,
+                'total_size_mb': 0
+            }
         
-        # Determine files to download
-        files_to_download = []
-        skipped_files = []
+        # Write CSV index
+        print(f"Writing CSV index to '{csv_output_path}'...")
+        csv_created = self.write_csv_index(file_details, csv_output_path)
         
-        for s3_key in s3_files:
-            # Determine local relative path
-            if s3_folder_path:
-                # Remove the S3 folder prefix to get the relative path
-                s3_prefix = s3_folder_path.rstrip('/') + '/'
-                if s3_key.startswith(s3_prefix):
-                    relative_path = s3_key[len(s3_prefix):]
-                else:
-                    relative_path = s3_key
-            else:
-                relative_path = s3_key
-            
-            # Convert to Unix-style path for comparison
-            relative_path_normalized = relative_path.replace('\\', '/')
-            
-            if relative_path_normalized in existing_local_files:
-                skipped_files.append(relative_path)
-                print(f"SKIP: {relative_path} (already exists locally)")
-            else:
-                files_to_download.append((s3_key, relative_path))
-                if dry_run:
-                    print(f"WOULD DOWNLOAD: s3://{self.bucket_name}/{s3_key} -> {relative_path}")
-                else:
-                    print(f"DOWNLOAD: s3://{self.bucket_name}/{s3_key} -> {relative_path}")
+        # Display sample of files found
+        print(f"\nSample of files found:")
+        for i, file_info in enumerate(file_details[:5]):  # Show first 5 files
+            print(f"  {i+1}. {file_info['relative_path']}")
         
-        # Download files
-        successful_downloads = 0
-        failed_downloads = 0
-        
-        if not dry_run and files_to_download:
-            print(f"\nDownloading {len(files_to_download)} new files...")
-            
-            for s3_key, relative_path in files_to_download:
-                local_file_path = os.path.join(local_folder_path, relative_path)
-                
-                if self.download_file(s3_key, local_file_path):
-                    successful_downloads += 1
-                else:
-                    failed_downloads += 1
+        if len(file_details) > 5:
+            print(f"  ... and {len(file_details) - 5} more files")
         
         # Summary
         stats = {
-            'total_s3_files': len(s3_files),
-            'existing_local_files': len(existing_local_files),
-            'files_to_download': len(files_to_download),
-            'skipped_files': len(skipped_files),
-            'successful_downloads': successful_downloads,
-            'failed_downloads': failed_downloads
+            'total_files': len(file_details),
+            'csv_created': csv_created,
+            'csv_path': csv_output_path,
+            'total_size_mb': 0,
+            'total_size_gb': 0
         }
         
-        print(f"\n--- Download Summary ---")
-        print(f"Total S3 files: {stats['total_s3_files']}")
-        print(f"Existing local files: {stats['existing_local_files']}")
-        print(f"Files to download: {stats['files_to_download']}")
-        print(f"Skipped files: {stats['skipped_files']}")
-        if not dry_run:
-            print(f"Successful downloads: {stats['successful_downloads']}")
-            print(f"Failed downloads: {stats['failed_downloads']}")
+        print(f"\n--- Indexing Summary ---")
+        print(f"Total files indexed: {stats['total_files']}")
+        print(f"CSV file created: {csv_output_path if csv_created else 'Failed'}")
         
         return stats
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Download files from S3 folder to local directory without overriding existing files')
-    parser.add_argument('--dry-run', action='store_true', help='Show what would be downloaded without actually downloading')
-    parser.add_argument('--region', help='AWS region (overrides AWS_DEFAULT_REGION env var)')
-    
-    args = parser.parse_args()
-    
     # Validate configuration
     if not BUCKET_NAME:
         print("Error: AWS_S3_BUCKET_NAME environment variable is required.")
@@ -236,23 +191,20 @@ def main():
         return
     
     try:
-        # Initialize downloader
-        downloader = S3FolderDownloader(
-            bucket_name=BUCKET_NAME,
-            region_name=args.region
-        )
+        # Initialize indexer
+        indexer = S3FileIndexer(bucket_name=BUCKET_NAME)
         
-        # Download folder
-        stats = downloader.download_folder(
+        # Create file index
+        stats = indexer.create_file_index(
             s3_folder_path=S3_FOLDER_PATH,
-            local_folder_path=LOCAL_FOLDER_PATH,
-            dry_run=args.dry_run
+            csv_output_path=CSV_OUTPUT_PATH
         )
         
-        if args.dry_run:
-            print("\nThis was a dry run. Use without --dry-run to actually download files.")
+        if stats['csv_created']:
+            print(f"\nFile index completed! CSV saved to: {stats['csv_path']}")
+            print(f"Total of {stats['total_files']} files indexed")
         else:
-            print(f"\nDownload completed! {stats['successful_downloads']} files downloaded successfully.")
+            print("\nError: Failed to create CSV file.")
             
     except NoCredentialsError:
         print("Error: AWS credentials not found. Please provide credentials via:")

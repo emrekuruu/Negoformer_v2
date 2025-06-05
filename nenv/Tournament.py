@@ -124,6 +124,8 @@ class Tournament:
         print(f'Started at {str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}.')
         print("Total negotiation:", len(negotiations))
 
+        indexed_files = pd.read_csv(os.path.join(os.path.dirname(os.path.dirname(__file__)), "indexed_files.csv"))
+
         print("*" * 50)
 
         for i, (agent_class_1, agent_class_2, domain_name) in enumerate(negotiations):
@@ -133,7 +135,7 @@ class Tournament:
             session_path = "%s_%s_Domain%s.xlsx" % \
                            (session_runner.agentA.name, session_runner.agentB.name, domain_name)
 
-            if os.path.exists(os.path.join(self.result_dir, "sessions/", session_path)):
+            if session_path in indexed_files["relative_path"].values:
                 print(f"Session {session_path} already exists. Skipping...")
                 continue
 
