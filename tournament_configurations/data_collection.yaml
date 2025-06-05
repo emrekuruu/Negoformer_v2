@@ -28,7 +28,7 @@ agents: ['AgentKN',
 ## Domain
 # You need to define domains as a list of strings.
 # Each string represents a domain name in 'domains' directory.
-domains: ['5', '6', '7', '9', '10', '11', '12', '13', '14']
+domains: [ '21', '22', '23', '25', '26', '27', '28', '29']
 
 ## Logger
 # You can define loggers as a list of strings.
