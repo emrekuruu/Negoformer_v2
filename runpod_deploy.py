@@ -27,12 +27,11 @@ AWS_CONFIG = {
 }
 
 def get_all_domains() -> List[str]:
-    return [
-       "5"
-    ]
+    return ['27']
 
 def create_pod_for_domain(domain: str) -> Dict:
     env_list = [
+        {"key": "POD_NAME", "value": f"negoformer-{domain}"},
         {"key": "DOMAIN_NAME", "value": domain},
         {"key": "PYTHONUNBUFFERED", "value": "1"},
     ] + [

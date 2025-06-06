@@ -10,4 +10,7 @@ python -u run.py tournament_configurations/data_collection.yaml | tee -a /app/bo
 echo "Step 3: Uploading results to S3..."
 python upload_to_s3.py
 
+echo "Step 4: Self-terminating pod..."
+runpodctl remove pod "$RUNPOD_POD_ID"
+
 echo "Pipeline completed successfully!"
