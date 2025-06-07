@@ -14,6 +14,7 @@ from botocore.exceptions import ClientError, NoCredentialsError
 from typing import List, Dict
 from dotenv import load_dotenv
 import sys
+from tqdm import tqdm
 
 # Load environment variables from .env file
 load_dotenv()
@@ -23,6 +24,9 @@ LOCAL_DOWNLOAD_PATH = "./results/sessions"  # Local directory to download files
 CSV_OUTPUT_PATH = "./download_log.csv"  # Path for the download log CSV file
 BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')  # Set in .env file
 S3_FOLDER_PATH = "sessions"  # Change this to your desired S3 folder path (empty string for root)
+
+# Create the local directory if it doesn't exist
+os.makedirs(LOCAL_DOWNLOAD_PATH, exist_ok=True)
 
 class S3FolderDownloader:
     def __init__(self, bucket_name: str, region_name: str = None):
@@ -114,10 +118,12 @@ class S3FolderDownloader:
             True if download successful, False otherwise
         """
         try:
-            # Create directory if it doesn't exist
+            if os.path.exists(local_path):
+                print(f"File already exists: {local_path}")
+                return True
+            
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             
-            # Download the file
             self.s3_client.download_file(self.bucket_name, s3_key, local_path)
             return True
             
@@ -208,12 +214,16 @@ class S3FolderDownloader:
         successful_downloads = 0
         failed_downloads = 0
         
-        for i, file_info in enumerate(files_to_download, 1):
+        # Create progress bar
+        progress_bar = tqdm(files_to_download, desc="Downloading files", unit="file")
+        
+        for file_info in progress_bar:
             s3_key = file_info['s3_key']
             relative_path = file_info['relative_path']
             local_file_path = os.path.join(local_download_path, relative_path)
             
-            print(f"[{i}/{len(files_to_download)}] Downloading: {relative_path} ({file_info['size_mb']} MB)")
+            # Update progress bar description with current file
+            progress_bar.set_description(f"Downloading: {relative_path[:50]}{'...' if len(relative_path) > 50 else ''}")
             
             # Download the file
             download_start_time = datetime.now()
@@ -235,10 +245,12 @@ class S3FolderDownloader:
             
             if download_success:
                 successful_downloads += 1
-                print(f"  ✓ Downloaded successfully")
             else:
                 failed_downloads += 1
-                print(f"  ✗ Download failed")
+                # Only print error messages
+                print(f"\n✗ Failed to download: {relative_path}")
+        
+        progress_bar.close()
         
         # Write download log
         print(f"\nWriting download log to '{csv_output_path}'...")

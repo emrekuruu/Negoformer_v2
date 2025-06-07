@@ -3,6 +3,7 @@ import sys
 import warnings
 import yaml
 import nenv
+import asyncio
 from nenv.utils.DynamicImport import load_logger_class, load_estimator_class, load_agent_class
 
 if not sys.warnoptions:
@@ -10,6 +11,7 @@ if not sys.warnoptions:
     warnings.simplefilter("ignore", category=FutureWarning)
 
 if __name__ == "__main__":
+    
     if len(sys.argv) != 2:
         print("Tournament configuration is not specified. Instead, try this:")
         print("python run.py tournament_example.yaml")
@@ -45,4 +47,4 @@ if __name__ == "__main__":
     del configuration["drawing_format"]
 
     tournament = nenv.Tournament(**configuration)
-    tournament.generate_results_from_existing_sessions()
+    asyncio.run(tournament.generate_results_from_existing_sessions())

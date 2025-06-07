@@ -5,8 +5,10 @@ import shutil
 import time
 import warnings
 from typing import Union, Set, List, Tuple, Optional
+import asyncio
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 from nenv.Agent import AgentClass
 from nenv.logger import AbstractLogger, LoggerClass
 from nenv.OpponentModel import OpponentModelClass
@@ -240,10 +242,10 @@ class Tournament:
 
         domains.to_excel(os.path.join(self.result_dir, "domains.xlsx"), sheet_name="domains", index=False)
 
-    def generate_results_from_existing_sessions(self):
+    async def generate_results_from_existing_sessions(self):
         """
             This method generates results and summaries from existing session logs
-            without re-running the tournament sessions.
+            without re-running the tournament sessions using async processing.
 
             :return: Nothing
         """
@@ -271,6 +273,9 @@ class Tournament:
         # Names for logger
         agent_names = []
         estimator_names = []
+        
+        # Create semaphore to limit concurrent operations
+        semaphore = asyncio.Semaphore(20)  # Process 20 files concurrently
         
         def extract_agent_names_from_filename(filename):
             """Extract agent names from filename format: AgentA_AgentB_DomainX.xlsx"""
@@ -376,58 +381,84 @@ class Tournament:
             
             return logger_data
         
-        i = 0 
+        async def process_session_file(session_file):
+            """Process a single session file asynchronously"""
+            async with semaphore:
+                session_path = os.path.join(sessions_dir, session_file)
+                
+                try:
+                    # Run pandas operation in thread pool
+                    loop = asyncio.get_event_loop()
+                    session_data = await loop.run_in_executor(None, pd.read_excel, session_path, "Session")
+                    
+                    # Extract agent names from filename
+                    agent_a, agent_b = extract_agent_names_from_filename(session_file)
+                    if agent_a is None or agent_b is None:
+                        return None, f"Could not extract agent names from {session_file}"
+                    
+                    # Extract domain name from filename
+                    import re
+                    domain_match = re.search(r'Domain(\d+)', session_file)
+                    domain_name = domain_match.group(1) if domain_match else "Unknown"
+                    
+                    # Calculate tournament result from session data
+                    tournament_result = calculate_tournament_result_from_session(session_data, agent_a, agent_b, domain_name)
+                    
+                    if tournament_result is None:
+                        return None, f"Could not process session data from {session_file}"
+                    
+                    # Simulate logger data from session
+                    logger_data = simulate_logger_data_from_session(session_data, tournament_result)
+                    
+                    # Create log entry
+                    log_entry = {"TournamentResults": tournament_result}
+                    log_entry.update(logger_data)
+                    
+                    return (log_entry, agent_a, agent_b), None
+                    
+                except Exception as e:
+                    return None, f"Could not load session file {session_file}: {str(e)}"
         
-        # Load each session file and extract results
-        for session_file in session_files:
-            session_path = os.path.join(sessions_dir, session_file)
-            
-            i += 1 
-            if i > 10:
-                break
-
-            try:
-                # Read the session data
-                session_data = pd.read_excel(session_path, sheet_name="Session")
+        # Process all files with progress bar
+        print("Processing session files...")
+        tasks = [process_session_file(session_file) for session_file in session_files]
+        
+        # Process with tqdm progress bar
+        results = []
+        successful_loads = 0
+        failed_loads = 0
+        
+        with tqdm(total=len(tasks), desc="Loading sessions", unit="file") as pbar:
+            for coro in asyncio.as_completed(tasks):
+                result, error = await coro
+                results.append((result, error))
+                pbar.update(1)
                 
-                # Extract agent names from filename
-                agent_a, agent_b = extract_agent_names_from_filename(session_file)
-                if agent_a is None or agent_b is None:
-                    print(f"Warning: Could not extract agent names from {session_file}")
-                    continue
-                
-                # Extract domain name from filename
-                import re
-                domain_match = re.search(r'Domain(\d+)', session_file)
-                domain_name = domain_match.group(1) if domain_match else "Unknown"
-                
-                # Calculate tournament result from session data
-                tournament_result = calculate_tournament_result_from_session(session_data, agent_a, agent_b, domain_name)
-                
-                if tournament_result is None:
-                    print(f"Warning: Could not process session data from {session_file}")
-                    continue
-                
-                # Simulate logger data from session
-                logger_data = simulate_logger_data_from_session(session_data, tournament_result)
-                
-                # Add to tournament logs (both tournament results and logger data)
-                log_entry = {"TournamentResults": tournament_result}
-                log_entry.update(logger_data)
-                tournament_logs.append(log_entry)
-                
-                # Collect agent names
-                if agent_a and agent_a not in agent_names:
-                    agent_names.append(agent_a)
-                
-                if agent_b and agent_b not in agent_names:
-                    agent_names.append(agent_b)
-                
-                print(f"Loaded session: {session_file}")
-                
-            except Exception as e:
-                print(f"Warning: Could not load session file {session_file}: {str(e)}")
+                if result is not None:
+                    successful_loads += 1
+                else:
+                    failed_loads += 1
+        
+        # Process results and collect data
+        for result, error in results:
+            if result is None:
+                if error:
+                    print(f"Warning: {error}")
                 continue
+                
+            log_entry, agent_a, agent_b = result
+            tournament_logs.append(log_entry)
+            
+            # Collect agent names
+            if agent_a and agent_a not in agent_names:
+                agent_names.append(agent_a)
+            
+            if agent_b and agent_b not in agent_names:
+                agent_names.append(agent_b)
+        
+        print(f"Successfully loaded: {successful_loads} files")
+        if failed_loads > 0:
+            print(f"Failed to load: {failed_loads} files")
         
         # Extract estimator names (use the tournament config)
         estimator_names = [estimator.name for estimator in self.estimators]
@@ -450,3 +481,12 @@ class Tournament:
         
         # Show folder
         open_folder(self.result_dir)
+
+    def generate_results_from_existing_sessions_sync(self):
+        """
+            Synchronous wrapper for generate_results_from_existing_sessions.
+            This method can be called from synchronous code.
+
+            :return: Nothing
+        """
+        asyncio.run(self.generate_results_from_existing_sessions())

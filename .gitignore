@@ -1,4 +1,3 @@
-/results/*
 /agent_storage/*
 *.pkl
 /.idea
@@ -6,7 +5,7 @@
 .venv/
 /venv
 
-results/
+sessions/
 logs/
 
 # Python bytecode - making extra sure to ignore all pycache

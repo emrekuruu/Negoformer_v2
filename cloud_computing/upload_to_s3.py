@@ -12,6 +12,7 @@ from pathlib import Path
 from botocore.exceptions import ClientError, NoCredentialsError
 from typing import Set, List
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 # Load environment variables from .env file
 load_dotenv()
@@ -169,28 +170,41 @@ class S3FolderUploader:
             
             if s3_key in existing_s3_files:
                 skipped_files.append(local_file)
-                print(f"SKIP: {local_file} (already exists in S3)")
             else:
                 files_to_upload.append((local_file, s3_key))
-                if dry_run:
-                    print(f"WOULD UPLOAD: {local_file} -> s3://{self.bucket_name}/{s3_key}")
-                else:
-                    print(f"UPLOAD: {local_file} -> s3://{self.bucket_name}/{s3_key}")
         
         # Upload files
         successful_uploads = 0
         failed_uploads = 0
         
-        if not dry_run and files_to_upload:
+        if dry_run:
+            print(f"\nDry run: Would upload {len(files_to_upload)} new files")
+            if files_to_upload:
+                print("Files that would be uploaded:")
+                for local_file, s3_key in files_to_upload[:10]:  # Show first 10 as example
+                    print(f"  {local_file} -> s3://{self.bucket_name}/{s3_key}")
+                if len(files_to_upload) > 10:
+                    print(f"  ... and {len(files_to_upload) - 10} more files")
+        elif files_to_upload:
             print(f"\nUploading {len(files_to_upload)} new files...")
             
-            for local_file, s3_key in files_to_upload:
+            # Create progress bar
+            progress_bar = tqdm(files_to_upload, desc="Uploading files", unit="file")
+            
+            for local_file, s3_key in progress_bar:
+                # Update progress bar description with current file
+                progress_bar.set_description(f"Uploading: {local_file[:50]}{'...' if len(local_file) > 50 else ''}")
+                
                 local_file_path = os.path.join(local_folder_path, local_file)
                 
                 if self.upload_file(local_file_path, s3_key):
                     successful_uploads += 1
                 else:
                     failed_uploads += 1
+                    # Only print error messages
+                    print(f"\n✗ Failed to upload: {local_file}")
+            
+            progress_bar.close()
         
         # Summary
         stats = {
