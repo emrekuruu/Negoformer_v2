@@ -20,7 +20,7 @@ load_dotenv()
 # Configuration - modify these values as needed
 CSV_OUTPUT_PATH = "./indexed_files.csv"  # Path for the output CSV file
 BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')  # Set in .env file
-S3_FOLDER_PATH = "results"  # Change this to your desired S3 folder path (empty string for root)
+S3_FOLDER_PATH = "sessions"  # Change this to your desired S3 folder path (empty string for root)
 
 class S3FileIndexer:
     def __init__(self, bucket_name: str, region_name: str = None):

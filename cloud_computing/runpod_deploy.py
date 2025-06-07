@@ -27,7 +27,7 @@ AWS_CONFIG = {
 }
 
 def get_all_domains() -> List[str]:
-    return ['27']
+    return ['14']
 
 def create_pod_for_domain(domain: str) -> Dict:
     env_list = [

@@ -21,8 +21,6 @@ agents: ['AgentKN',
          'SAGAAgent',
          'Rubick',
          'Kawaii',
-         'NiceTitForTat',
-         'Caduceus',
          'Atlas3Agent']
 
 ## Logger
@@ -39,6 +37,9 @@ loggers: [
           'EstimatedMoveLogger',
           'EstimatorOnlyFinalMetricLogger']
 
+
+domains: ['5', '6', '7', '9', '10', '11', '12', '13', '14', '21', '22', '23', '25', '26', '27', '28', '29', '30', '37', '38', '39', '41', '42', '43', '44', '45', '46']
+
 ## Opponent Model
 # You can define opponent models as a list of strings.
 # Each string represents the class name of an opponent model.
@@ -52,7 +53,7 @@ self_negotiation: False
 # The number of times an agent will negotiate with another agent in the same domain.
 repeat: 1
 # Where the results will be logged. Note that this directory will be cleaned before the tournament starts.
-result_dir: 'results/data_collection/'
+result_dir: 'results/'
 # Random seed for build-in Python random and NumPy.
 seed: 1234
 # Once all combinations have been decided, this parameter determines whether the session order will be random or not.
