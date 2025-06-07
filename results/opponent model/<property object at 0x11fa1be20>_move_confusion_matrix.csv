@@ -1,0 +1,10 @@
+<property object at 0x11fa1be20> Move Confusion Matrix;
+
+;Estimated Move;
+Real Move;Concession;Fortunate;Nice;Selfish;Silent;Unfortunate;
+Concession;0.0;0.0;0.0;0.0;0.0;0.0;
+Fortunate;0.0;0.0;0.0;0.0;0.0;0.0;
+Nice;0.0;0.0;0.0;0.0;0.0;0.0;
+Selfish;0.0;0.0;0.0;0.0;0.0;0.0;
+Silent;0.0;0.0;0.0;0.0;0.0;0.0;
+Unfortunate;0.0;0.0;0.0;0.0;0.0;0.0;
