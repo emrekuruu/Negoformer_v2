@@ -35,6 +35,7 @@ loggers: [
           'UtilityDistributionLogger',
           'TournamentSummaryLogger',
           'EstimatedMoveLogger',
+          'EstimatedUtilityLogger',
           'EstimatorOnlyFinalMetricLogger']
 
 

@@ -18,7 +18,7 @@ from tqdm import tqdm
 load_dotenv()
 
 # Configuration - modify these values as needed
-LOCAL_FOLDER_PATH = "./results/data_collection/sessions"  # Change this to your desired folder path
+LOCAL_FOLDER_PATH = "./results/sessions"  # Change this to your desired folder path
 BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')  # Set in .env file
 S3_FOLDER_PATH = "sessions"  # Change this to your desired S3 folder path (empty string for root)
 

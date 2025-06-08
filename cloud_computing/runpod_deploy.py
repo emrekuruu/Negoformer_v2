@@ -27,7 +27,7 @@ AWS_CONFIG = {
 }
 
 def get_all_domains() -> List[str]:
-    return ['14']
+    return  ['14']
 
 def create_pod_for_domain(domain: str) -> Dict:
     env_list = [
@@ -78,7 +78,7 @@ def create_pod_for_domain(domain: str) -> Dict:
         print(f"❌ Failed to create pod for domain {domain}: {str(e)}")
         return None
 
-def deploy_all_domains(domains: List[str] = None, batch_size: int = 5):
+def deploy_all_domains(domains: List[str] = None, batch_size: int = 2):
     if not RUNPOD_API_KEY:
         print("❌ RUNPOD_API_KEY is not set. Aborting.")
         return
@@ -104,7 +104,7 @@ def deploy_all_domains(domains: List[str] = None, batch_size: int = 5):
 
         if i + batch_size < len(domains):
             print("⏳ Waiting 10 seconds before next batch...")
-            time.sleep(10)
+            time.sleep(5)
 
     print(f"\n✅ Deployment complete. {len(deployed_pods)} pods launched.")
 

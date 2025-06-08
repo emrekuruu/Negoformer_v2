@@ -5,16 +5,13 @@ import shutil
 import time
 import warnings
 from typing import Union, Set, List, Tuple, Optional
-import asyncio
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 from nenv.Agent import AgentClass
 from nenv.logger import AbstractLogger, LoggerClass
 from nenv.OpponentModel import OpponentModelClass
 from nenv.SessionManager import SessionManager
 from nenv.utils import ExcelLog, TournamentProcessMonitor, open_folder
-
 
 class Tournament:
     """
@@ -117,7 +114,7 @@ class Tournament:
         estimator_names = []
 
         # Tournament log file
-        tournament_logs = ExcelLog(["TournamentResults", "UtilityDist"])
+        tournament_logs = ExcelLog(["TournamentResults"])
 
         tournament_logs.save(os.path.join(self.result_dir, "results.xlsx"))
 
@@ -126,7 +123,10 @@ class Tournament:
         print(f'Started at {str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}.')
         print("Total negotiation:", len(negotiations))
 
-        indexed_files = pd.read_csv(os.path.join(os.path.dirname(os.path.dirname(__file__)), "indexed_files.csv"))
+        if os.path.exists(os.path.join(os.path.dirname(os.path.dirname(__file__)), "indexed_files.csv")):
+            indexed_files = pd.read_csv(os.path.join(os.path.dirname(os.path.dirname(__file__)), "indexed_files.csv"))
+        else:
+            indexed_files = pd.DataFrame(columns=["relative_path"])
 
         print("*" * 50)
 
@@ -142,11 +142,13 @@ class Tournament:
                 continue
 
             session_start_time = time.time()
-            session_data = session_runner.run(os.path.join(self.result_dir, "sessions/", session_path))
+            tournament_logs.append(session_runner.run(os.path.join(self.result_dir, "sessions/", session_path)))
             session_end_time = time.time()
 
             # Update total elapsed time
             session_elapsed_time = session_end_time - session_start_time
+
+            tournament_logs.update({"TournamentResults": {"SessionRealTime": session_elapsed_time}})
 
             # Get list of name for loggers
             if len(estimator_names) == 0:
@@ -162,21 +164,6 @@ class Tournament:
 
             if self.killed:  # Check for kill signal
                 return
-
-            # Calculate tournament result from session data
-            tournament_result = calculate_tournament_result_from_session(session_data, session_runner.agentA.name, session_runner.agentB.name, domain_name)
-            
-            if tournament_result is None:
-                print(f"Warning: Could not process session data from {session_path}")
-                continue
-            
-            # Simulate logger data from session
-            logger_data = simulate_logger_data_from_session(session_data, tournament_result)
-            
-            # Add to tournament logs (both tournament results and logger data)
-            log_entry = {"TournamentResults": tournament_result}
-            log_entry.update(logger_data)
-            tournament_logs.append(log_entry)
 
         self.tournament_process.end()
         print("*" * 50)
@@ -241,252 +228,3 @@ class Tournament:
                 domain_counter += 1
 
         domains.to_excel(os.path.join(self.result_dir, "domains.xlsx"), sheet_name="domains", index=False)
-
-    async def generate_results_from_existing_sessions(self):
-        """
-            This method generates results and summaries from existing session logs
-            without re-running the tournament sessions using async processing.
-
-            :return: Nothing
-        """
-        
-        # Ensure result directory exists
-        os.makedirs(self.result_dir, exist_ok=True)
-        
-        # Check if sessions directory exists
-        sessions_dir = os.path.join(self.result_dir, "sessions/")
-        if not os.path.exists(sessions_dir):
-            raise FileNotFoundError(f"Sessions directory not found: {sessions_dir}")
-        
-        # Get all session files
-        session_files = [f for f in os.listdir(sessions_dir) if f.endswith('.xlsx')]
-        
-        if not session_files:
-            raise FileNotFoundError("No session files found in the sessions directory")
-        
-        print(f'Generating results from {len(session_files)} existing session files...')
-        print("*" * 50)
-        
-        # Tournament log file
-        tournament_logs = ExcelLog(["TournamentResults", "UtilityDist"])
-        
-        # Names for logger
-        agent_names = []
-        estimator_names = []
-        
-        # Create semaphore to limit concurrent operations
-        semaphore = asyncio.Semaphore(20)  # Process 20 files concurrently
-        
-        def extract_agent_names_from_filename(filename):
-            """Extract agent names from filename format: AgentA_AgentB_DomainX.xlsx"""
-            name_without_ext = filename.replace('.xlsx', '')
-            # Remove the Domain part from the end
-            import re
-            domain_match = re.search(r'_Domain\d+$', name_without_ext)
-            if domain_match:
-                name_without_domain = name_without_ext[:domain_match.start()]
-                # Split into agent names (assuming format AgentA_AgentB)
-                parts = name_without_domain.split('_')
-                if len(parts) >= 2:
-                    # Find the split point - typically the second agent starts with a capital letter
-                    # or use a known pattern
-                    agent_a = parts[0]
-                    agent_b = '_'.join(parts[1:])
-                    return agent_a, agent_b
-            return None, None
-        
-        def calculate_tournament_result_from_session(session_data, agent_a, agent_b, domain_name):
-            """Calculate tournament result from round-by-round session data"""
-            if len(session_data) == 0:
-                return None
-                
-            # Get the last row to determine final state
-            last_row = session_data.iloc[-1]
-            
-            # Determine result type
-            result = "Failed"  # Default
-            who = "-"
-            final_bid = None
-            
-            if last_row["Action"] == "Accept":
-                result = "Acceptance" 
-                who = last_row["Who"]
-                final_bid = last_row["BidContent"]
-            
-            # Count number of offers (exclude Accept actions)
-            num_offers = len(session_data[session_data["Action"] == "Offer"])
-            
-            # Create tournament result
-            tournament_result = {
-                "AgentA": agent_a,
-                "AgentB": agent_b,
-                "Round": int(last_row["Round"]),
-                "Time": float(last_row["Time"]),
-                "NumOffer": num_offers,
-                "Who": who,
-                "Result": result,
-                "AgentAUtility": float(last_row["AgentAUtility"]),
-                "AgentBUtility": float(last_row["AgentBUtility"]),
-                "ProductScore": float(last_row["ProductScore"]),
-                "SocialWelfare": float(last_row["SocialWelfare"]),
-                "BidContent": final_bid,
-                "ElapsedTime": float(last_row["ElapsedTime"]),
-                "DomainName": domain_name,
-                # Add additional fields that might be needed
-                "NashDistance": float(last_row.get("NashDistance", 0)),
-                "KalaiDistance": float(last_row.get("KalaiDistance", 0))
-            }
-            
-            return tournament_result
-        
-        def simulate_logger_data_from_session(session_data, tournament_result):
-            """Simulate logger data creation from session data"""
-            logger_data = {}
-            
-            # Simulate UtilityDistributionLogger.on_session_end()
-            utility_a, utility_b = [], []
-            opp_utility_a, opp_utility_b = [], []
-
-            for _, log_row in session_data.iterrows():
-                if log_row["Action"] != "Offer":
-                    continue
-
-                if log_row["Who"] == 'A':
-                    utility_a.append(float(log_row["AgentAUtility"]))
-                    opp_utility_a.append(float(log_row["AgentBUtility"]))
-                else:
-                    utility_b.append(float(log_row["AgentBUtility"]))
-                    opp_utility_b.append(float(log_row["AgentAUtility"]))
-
-            utility_dist_data = {
-                "MeanAgentUtilityA": np.mean(utility_a) if len(utility_a) > 0 else 0.,
-                "MeanAgentUtilityB": np.mean(utility_b) if len(utility_b) > 0 else 0.,
-                "MeanOpponentUtilityA": np.mean(opp_utility_a) if len(opp_utility_a) > 0 else 0.,
-                "MeanOpponentUtilityB": np.mean(opp_utility_b) if len(opp_utility_b) > 0 else 0.,
-                "StdAgentUtilityA": np.std(utility_a) if len(utility_a) > 0 else 0.,
-                "StdAgentUtilityB": np.std(utility_b) if len(utility_b) > 0 else 0.,
-                "StdOpponentUtilityA": np.std(opp_utility_a) if len(opp_utility_a) > 0 else 0.,
-                "StdOpponentUtilityB": np.std(opp_utility_b) if len(opp_utility_b) > 0 else 0.,
-                "MaxAgentUtilityA": np.max(utility_a) if len(utility_a) > 0 else 0.,
-                "MaxAgentUtilityB": np.max(utility_b) if len(utility_b) > 0 else 0.,
-                "MaxOpponentUtilityA": np.max(opp_utility_a) if len(opp_utility_a) > 0 else 0.,
-                "MaxOpponentUtilityB": np.max(opp_utility_b) if len(opp_utility_b) > 0 else 0.,
-                "MinAgentUtilityA": np.min(utility_a) if len(utility_a) > 0 else 0.,
-                "MinAgentUtilityB": np.min(utility_b) if len(utility_b) > 0 else 0.,
-                "MinOpponentUtilityA": np.min(opp_utility_a) if len(opp_utility_a) > 0 else 0.,
-                "MinOpponentUtilityB": np.min(opp_utility_b) if len(opp_utility_b) > 0 else 0.,
-            }
-            
-            logger_data["UtilityDist"] = utility_dist_data
-            
-            return logger_data
-        
-        async def process_session_file(session_file):
-            """Process a single session file asynchronously"""
-            async with semaphore:
-                session_path = os.path.join(sessions_dir, session_file)
-                
-                try:
-                    # Run pandas operation in thread pool
-                    loop = asyncio.get_event_loop()
-                    session_data = await loop.run_in_executor(None, pd.read_excel, session_path, "Session")
-                    
-                    # Extract agent names from filename
-                    agent_a, agent_b = extract_agent_names_from_filename(session_file)
-                    if agent_a is None or agent_b is None:
-                        return None, f"Could not extract agent names from {session_file}"
-                    
-                    # Extract domain name from filename
-                    import re
-                    domain_match = re.search(r'Domain(\d+)', session_file)
-                    domain_name = domain_match.group(1) if domain_match else "Unknown"
-                    
-                    # Calculate tournament result from session data
-                    tournament_result = calculate_tournament_result_from_session(session_data, agent_a, agent_b, domain_name)
-                    
-                    if tournament_result is None:
-                        return None, f"Could not process session data from {session_file}"
-                    
-                    # Simulate logger data from session
-                    logger_data = simulate_logger_data_from_session(session_data, tournament_result)
-                    
-                    # Create log entry
-                    log_entry = {"TournamentResults": tournament_result}
-                    log_entry.update(logger_data)
-                    
-                    return (log_entry, agent_a, agent_b), None
-                    
-                except Exception as e:
-                    return None, f"Could not load session file {session_file}: {str(e)}"
-        
-        # Process all files with progress bar
-        print("Processing session files...")
-        tasks = [process_session_file(session_file) for session_file in session_files]
-        
-        # Process with tqdm progress bar
-        results = []
-        successful_loads = 0
-        failed_loads = 0
-        
-        with tqdm(total=len(tasks), desc="Loading sessions", unit="file") as pbar:
-            for coro in asyncio.as_completed(tasks):
-                result, error = await coro
-                results.append((result, error))
-                pbar.update(1)
-                
-                if result is not None:
-                    successful_loads += 1
-                else:
-                    failed_loads += 1
-        
-        # Process results and collect data
-        for result, error in results:
-            if result is None:
-                if error:
-                    print(f"Warning: {error}")
-                continue
-                
-            log_entry, agent_a, agent_b = result
-            tournament_logs.append(log_entry)
-            
-            # Collect agent names
-            if agent_a and agent_a not in agent_names:
-                agent_names.append(agent_a)
-            
-            if agent_b and agent_b not in agent_names:
-                agent_names.append(agent_b)
-        
-        print(f"Successfully loaded: {successful_loads} files")
-        if failed_loads > 0:
-            print(f"Failed to load: {failed_loads} files")
-        
-        # Extract estimator names (use the tournament config)
-        estimator_names = [estimator.name for estimator in self.estimators]
-        
-        print("*" * 50)
-        print("All sessions loaded. Running analysis...")
-        
-        # Backup
-        tournament_logs.save(os.path.join(self.result_dir, "results_backup.xlsx"))
-        
-        # On tournament end - this is where the actual analysis happens
-        for logger in self.loggers:
-            logger.on_tournament_end(tournament_logs, agent_names, self.domains, estimator_names)
-        
-        # Save tournament logs
-        tournament_logs.save(os.path.join(self.result_dir, "results.xlsx"))
-        
-        print("Analysis completed successfully.")
-        print("*" * 50)
-        
-        # Show folder
-        open_folder(self.result_dir)
-
-    def generate_results_from_existing_sessions_sync(self):
-        """
-            Synchronous wrapper for generate_results_from_existing_sessions.
-            This method can be called from synchronous code.
-
-            :return: Nothing
-        """
-        asyncio.run(self.generate_results_from_existing_sessions())
